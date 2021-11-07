@@ -1,0 +1,2 @@
+bind_addr = ":8080"
+database_url = "host=localhost dbname=notebook_api user=postgres password=qwerty sslmode=disable"
