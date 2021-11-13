@@ -3,6 +3,7 @@ package apiserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
@@ -38,6 +39,7 @@ func (s *server) configureRouter() {
 	s.router.HandleFunc("/create", s.handleCreateUser()).Methods("POST")
 	s.router.HandleFunc("/find/article", s.handleFindArticleByHeading()).Methods("GET")
 	s.router.HandleFunc("/show_all_articles", s.handleShowAllArticles()).Methods("GET")
+	s.router.HandleFunc("/authorize", s.handleAuthorizeUser()).Methods("POST")
 
 	private := s.router.PathPrefix("/private").Subrouter()
 	private.Use(s.JwtAuthentication)
@@ -92,6 +94,39 @@ func (s *server) handleCreateUser() http.HandlerFunc {
 	}
 }
 
+func (s *server) handleAuthorizeUser() http.HandlerFunc {
+	type request struct {
+		Email string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		req := &request{}
+
+		if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+			s.error(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		u, err := s.store.User().FindByEmail(req.Email)
+		if err != nil {
+			s.error(w, r, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		if err := u.ComparePassword(req.Password); err != nil {
+			s.error(w, r, http.StatusForbidden, errors.New("invalid email or password"))
+			return
+		}
+
+		tk := &model.Token{ID: u.ID}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, tk)
+		tokenString, _ := token.SignedString([]byte(os.Getenv("token_string")))
+
+		s.respond(w, r, http.StatusOK, tokenString)
+	}
+}
+
 func (s *server) handleCreateArticle() http.HandlerFunc {
 	type request struct {
 		ArticleHeader string `json:"article_header"`
@@ -103,6 +138,7 @@ func (s *server) handleCreateArticle() http.HandlerFunc {
 		req := &request{}
 		if err := json.NewDecoder(r.Body).Decode(req); err != nil {
 			s.error(w, r, http.StatusBadRequest, err)
+			return
 		}
 
 		a := &model.Article{
@@ -114,6 +150,7 @@ func (s *server) handleCreateArticle() http.HandlerFunc {
 
 		if err := s.store.Article().CreateArticle(a); err != nil {
 			s.error(w, r, http.StatusUnprocessableEntity, err)
+			return
 		}
 
 		s.respond(w, r, http.StatusCreated, a)
@@ -252,7 +289,6 @@ func (s *server) JwtAuthentication(next http.Handler) http.Handler {
 
 		tokenPart := splitted[1]
 
-		fmt.Println(tokenPart)
 		tk := &model.Token{}
 
 		token, err := jwt.ParseWithClaims(tokenPart, tk, func(token *jwt.Token) (interface{}, error) {

@@ -92,6 +92,3 @@ func (a *ArticleRepository) ChangeArticleById(ar *model.Article) error {
 		&ar.Text,
 	)
 }
-
-//select a.article_header, a.article_text, u.name, a.creating_date from articles a left join users u on u.id=a.author_id;
-//select a.article_header, a.article_text, u.name, a.creating_date from articles a left join users u on u.id=a.author_id where a.article_header='Hello';
